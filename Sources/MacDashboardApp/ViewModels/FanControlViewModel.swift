@@ -215,6 +215,15 @@ public final class FanControlViewModel: ObservableObject {
 
         await MainActor.run {
             self.componentReadings = readings
+            // Hottest measured component drives the Dock temperature bar.
+            // Derived targets (peak, palm rest) are excluded so the bar only
+            // ever reflects a real sensor.
+            DockTileController.shared.updateTemperature(
+                ThermalSensorPresentation
+                    .measuredPhysicalReadings(from: readings)
+                    .compactMap(\.temperatureCelsius)
+                    .max()
+            )
             if !self.measuredSensorTargets.contains(self.selectedSensorTarget),
                let firstMeasuredTarget = self.measuredSensorTargets.first {
                 self.selectedSensorTarget = firstMeasuredTarget

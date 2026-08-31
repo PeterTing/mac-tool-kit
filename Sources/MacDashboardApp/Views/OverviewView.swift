@@ -133,6 +133,42 @@ public struct OverviewView: View {
                     }
                 }
 
+                // GPU Card (full width strip)
+                GlassCard(title: "繪圖處理器 (GPU)", iconName: "cpu.fill", accentColor: .orange) {
+                    HStack(spacing: 20) {
+                        CircularGaugeView(
+                            percentage: dashboardVM.gpuSnapshot.utilization,
+                            title: "使用率",
+                            subtitle: dashboardVM.gpuSnapshot.deviceName.isEmpty ? "GPU" : dashboardVM.gpuSnapshot.deviceName,
+                            iconName: "cpu.fill",
+                            size: 100
+                        )
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("統一記憶體佔用:").foregroundColor(.secondary)
+                                Spacer()
+                                Text(String(format: "%.2f GiB", Double(dashboardVM.gpuSnapshot.inUseMemoryBytes) / (1024*1024*1024))).bold()
+                            }
+                            HStack {
+                                Text("Renderer:").foregroundColor(.secondary)
+                                Spacer()
+                                Text(String(format: "%.0f%%", dashboardVM.gpuSnapshot.rendererUtilization)).bold()
+                            }
+                            HStack {
+                                Text("Tiler:").foregroundColor(.secondary)
+                                Spacer()
+                                Text(String(format: "%.0f%%", dashboardVM.gpuSnapshot.tilerUtilization)).bold()
+                            }
+                        }
+                        .font(.system(size: 12))
+                        .frame(width: 220)
+
+                        SparklineView(data: dashboardVM.gpuHistory, lineColor: .orange, fillColor: .orange.opacity(0.2))
+                            .frame(height: 70)
+                    }
+                }
+
                 // Grid 2: Storage & Network & Thermal
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                     // Storage

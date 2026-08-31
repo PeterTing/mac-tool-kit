@@ -99,6 +99,7 @@ public final class DashboardViewModel: ObservableObject {
     // Current Live Metrics
     @Published public var cpuSnapshot = CPUUsageSnapshot()
     @Published public var memorySnapshot = MemoryUsageSnapshot()
+    @Published public var gpuSnapshot = GPUUsageSnapshot()
     @Published public var processes: [ProcessItem] = []
     @Published public var diskVolumes: [DiskVolumeInfo] = []
     @Published public var diskIOSnapshot = DiskIOSnapshot()
@@ -114,6 +115,7 @@ public final class DashboardViewModel: ObservableObject {
     // History for Sparkline Graphs (Last 30 points)
     @Published public var cpuHistory: [Double] = Array(repeating: 0, count: 30)
     @Published public var memoryHistory: [Double] = Array(repeating: 0, count: 30)
+    @Published public var gpuHistory: [Double] = Array(repeating: 0, count: 30)
     @Published public var networkDownHistory: [Double] = Array(repeating: 0, count: 30)
     @Published public var networkUpHistory: [Double] = Array(repeating: 0, count: 30)
 
@@ -126,6 +128,7 @@ public final class DashboardViewModel: ObservableObject {
     // Services
     private let cpuMonitor = CPUMonitor()
     private let memoryMonitor = MemoryMonitor()
+    private let gpuMonitor = GPUMonitor()
     private let processMonitor = ProcessMonitor()
     private let diskMonitor = DiskMonitor()
     private let networkMonitor = NetworkMonitor()
@@ -164,6 +167,7 @@ public final class DashboardViewModel: ObservableObject {
     public func performSample() async {
         let cpuMon = cpuMonitor
         let memMon = memoryMonitor
+        let gpuMon = gpuMonitor
         let procMon = processMonitor
         let diskMon = diskMonitor
         let netMon = networkMonitor
@@ -175,6 +179,7 @@ public final class DashboardViewModel: ObservableObject {
             autoreleasepool { () -> (
                 cpu: CPUUsageSnapshot,
                 mem: MemoryUsageSnapshot,
+                gpu: GPUUsageSnapshot,
                 procs: [ProcessItem],
                 vols: [DiskVolumeInfo],
                 dIO: DiskIOSnapshot,
@@ -183,10 +188,13 @@ public final class DashboardViewModel: ObservableObject {
                 dockers: [DockerContainerInfo]
             ) in
                 let bt = btMon.sample()
+                // Reading IOAccelerator statistics costs well under a
+                // millisecond, so the GPU gauge stays live even in Eco mode.
+                let gpu = gpuMon.sample()
 
                 if isFanOnly {
                     // Eco Mode: zero process scanning, zero docker stats, minimal overhead
-                    return (CPUUsageSnapshot(), MemoryUsageSnapshot(), [], [], DiskIOSnapshot(), NetworkIOSnapshot(), bt, [])
+                    return (CPUUsageSnapshot(), MemoryUsageSnapshot(), gpu, [], [], DiskIOSnapshot(), NetworkIOSnapshot(), bt, [])
                 }
 
                 let cpu = cpuMon.sample()
@@ -196,13 +204,15 @@ public final class DashboardViewModel: ObservableObject {
                 let dIO = diskMon.sampleIO()
                 let nIO = netMon.sample()
                 let dockers = procMon.sampleDockerContainers()
-                return (cpu, mem, procs, vols, dIO, nIO, bt, dockers)
+                return (cpu, mem, gpu, procs, vols, dIO, nIO, bt, dockers)
             }
         }.value
 
         // Atomic batch update on MainActor
         self.batteryThermalSnapshot = sample.bt
         self.fanStatuses = fans
+        self.gpuSnapshot = sample.gpu
+        self.appendHistory(value: sample.gpu.utilization, to: &self.gpuHistory)
 
         if !isFanOnly {
             self.cpuSnapshot = sample.cpu
@@ -218,6 +228,14 @@ public final class DashboardViewModel: ObservableObject {
             self.appendHistory(value: sample.nIO.downloadBytesPerSec / (1024 * 1024), to: &self.networkDownHistory)
             self.appendHistory(value: sample.nIO.uploadBytesPerSec / (1024 * 1024), to: &self.networkUpHistory)
         }
+
+        // Keep the Dock icon gauge in sync. Eco mode skips CPU/RAM sampling,
+        // so those two bars hold their last known values while GPU keeps ticking.
+        DockTileController.shared.update(
+            cpu: self.cpuSnapshot.totalUsage,
+            ram: self.memorySnapshot.usedPercentage,
+            gpu: self.gpuSnapshot.utilization
+        )
     }
 
     public func refreshAll() {
